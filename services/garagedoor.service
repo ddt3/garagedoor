@@ -1,0 +1,12 @@
+[Unit]
+Description=Garage door opener
+After=multi-user.target
+
+[Service]
+User=pi
+Group=pi
+Type=idle
+ExecStart=/usr/bin/python3 /home/pi/rpi-project/garagedoor.py /home/pi/rpi-project/logs/garagedoor.log 2>&1
+
+[Install]
+WantedBy=multi-user.target
