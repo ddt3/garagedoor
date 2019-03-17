@@ -1,5 +1,5 @@
 [Unit]
-Description=Garage door opener
+Description=Humidity logger service
 After=multi-user.target
 
 [Service]
