@@ -49,7 +49,7 @@ def on_message(client, userdata, msg):
         logging.info('Relais On')
         client.publish(mqttcommandstat, "OFF")
     else:
-        logging.info('Of command reveiced')
+        logging.info('Off command reveiced')
 
 # The call back if the door has been moving for too long: set state to unknown
 def traveltimer_passed():
