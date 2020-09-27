@@ -59,6 +59,16 @@ def traveltimer_passed():
     if not opensensor.is_active and not closedsensor.is_active:
         logging.debug('State is UNKNOWN')
         client.publish(mqttstate, "UNKNOWN")
+    elif opensensor.is_active and not closedsensor.is_active:
+        logging.info('Door is OPEN Ping')
+        client.publish(mqttstate, "OPEN")
+        mtevent=movetimer.enter(maxmovetime*20,1,traveltimer_passed) # Trigger stay alive time
+    elif not opensensor.is_active and closedsensor.is_active:
+        logging.info('Door is CLOSED Ping')
+        client.publish(mqttstate, "CLOSED")
+        mtevent=movetimer.enter(maxmovetime*20,1,traveltimer_passed) # Trigger stay alive timer
+
+
 
 # The call back if one of the inputs changes: determine the state of the door
 def determine_state():
@@ -74,11 +84,14 @@ def determine_state():
             movetimer.cancel(mtevent) # Cancel timer, status is known
         logging.info('Door is OPEN')
         client.publish(mqttstate, "OPEN")
+        mtevent=movetimer.enter(maxmovetime*20,1,traveltimer_passed) # Trigger stay alive time
     elif not opensensor.is_active and closedsensor.is_active:
         logging.info('Door is CLOSED')
         if mtevent:
             movetimer.cancel(mtevent) # Cancel timer, status is known
         client.publish(mqttstate, "CLOSED")
+        mtevent=movetimer.enter(maxmovetime*20,1,traveltimer_passed) # Trigger stay alive timer
+
     else:
         logging.info('Door is Moving')    
         client.publish(mqttstate, "MOVING")
