@@ -4,17 +4,22 @@
 # Communication with openHAB2 using MQTT.
 import paho.mqtt.client as mqtt
 import time, sched, logging, sys
-from gpiozero import Button
-from gpiozero import DigitalOutputDevice
+from gpiozero import Button, DigitalOutputDevice
+
+# Set the default pin factory to a mock factory
 
 # Use logging
-logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+logging.basicConfig(stream=sys.stderr, format='%(asctime)s %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 
 # Timer to check if garagedoor opens or closes in time
 # Event is triggered when maxmovetime is exceeded
 movetimer=sched.scheduler()
+pingtimer=sched.scheduler()
+
 mtevent=False
+ptevent=False
 maxmovetime=30
+pingtime=600 # 10 minutes
 
 # Define in and outputs
 relais = DigitalOutputDevice(18,initial_value=True, active_high=True)
@@ -34,7 +39,7 @@ def on_connect(client, userdata, flags, rc):
 
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
-    client.subscribe("cmnd/pi-garage/relais")
+    client.subscribe(mqttcommand)
 
 # The callback for when a PUBLISH message is received from the server.
 # Handling commands given by the server
@@ -59,16 +64,21 @@ def traveltimer_passed():
     if not opensensor.is_active and not closedsensor.is_active:
         logging.debug('State is UNKNOWN')
         client.publish(mqttstate, "UNKNOWN")
+
+def pingtimer_passed():
+    global ptevent
+    logging.info('Ping timer  passed')
+    ptevent=False
+    if not opensensor.is_active and not closedsensor.is_active:
+        logging.debug('Ping: State is UNKNOWN')
+        client.publish(mqttstate, "UNKNOWN")
     elif opensensor.is_active and not closedsensor.is_active:
-        logging.info('Door is OPEN Ping')
+        logging.info('Ping: Door is OPEN')
         client.publish(mqttstate, "OPEN")
-        mtevent=movetimer.enter(maxmovetime*20,1,traveltimer_passed) # Trigger stay alive time
     elif not opensensor.is_active and closedsensor.is_active:
-        logging.info('Door is CLOSED Ping')
+        logging.info('Ping: Door is CLOSED')
         client.publish(mqttstate, "CLOSED")
-        mtevent=movetimer.enter(maxmovetime*20,1,traveltimer_passed) # Trigger stay alive timer
-
-
+    ptevent=movetimer.enter(pingtime,1,pingtimer_passed) # Trigger new ping timer
 
 # The call back if one of the inputs changes: determine the state of the door
 def determine_state():
@@ -76,28 +86,27 @@ def determine_state():
     # Garage door open:    open sensor  active     && closed sensor not active
     # Garage door moving:  open sensor not active  && closed sensor not active, move time not passed 
     # Garage door unknown: open sensor not active  && closed sensor not active, move time passed
-    global  mtevent, maxmovetime
-    
+    global mtevent
+    global ptevent
+    if ptevent:
+        pingtimer.cancel(ptevent) # Cancel ping timer we will be sending out status.
     logging.debug('current state, open: %s closed: %s',opensensor.is_active,closedsensor.is_active)
     if opensensor.is_active and not closedsensor.is_active:
         if mtevent:
             movetimer.cancel(mtevent) # Cancel timer, status is known
         logging.info('Door is OPEN')
         client.publish(mqttstate, "OPEN")
-        mtevent=movetimer.enter(maxmovetime*20,1,traveltimer_passed) # Trigger stay alive time
     elif not opensensor.is_active and closedsensor.is_active:
         logging.info('Door is CLOSED')
         if mtevent:
             movetimer.cancel(mtevent) # Cancel timer, status is known
         client.publish(mqttstate, "CLOSED")
-        mtevent=movetimer.enter(maxmovetime*20,1,traveltimer_passed) # Trigger stay alive timer
-
     else:
         logging.info('Door is Moving')    
         client.publish(mqttstate, "MOVING")
-        mtevent=movetimer.enter(maxmovetime,1,traveltimer_passed) # Door moving start timer
         if mtevent:
             logging.debug(mtevent)
+    ptevent=movetimer.enter(pingtime,1,pingtimer_passed)
 
 
 # Register  callbacks
@@ -114,3 +123,4 @@ client.loop_start()
 determine_state()
 while True:
     movetimer.run()
+    pingtimer.run()
