@@ -79,6 +79,7 @@ def pingtimer_passed():
         logging.info('Ping: Door is CLOSED')
         client.publish(mqttstate, "CLOSED")
     ptevent=movetimer.enter(pingtime,1,pingtimer_passed) # Trigger new ping timer
+    logging.debug("Ping Timer started "+str(ptevent))
 
 # The call back if one of the inputs changes: determine the state of the door
 def determine_state():
@@ -88,6 +89,7 @@ def determine_state():
     # Garage door unknown: open sensor not active  && closed sensor not active, move time passed
     global mtevent
     global ptevent
+    logging.debug("Ping Timer ptevent: "+str(ptevent))
     if ptevent:
         pingtimer.cancel(ptevent) # Cancel ping timer we will be sending out status.
     logging.debug('current state, open: %s closed: %s',opensensor.is_active,closedsensor.is_active)
@@ -104,9 +106,9 @@ def determine_state():
     else:
         logging.info('Door is Moving')    
         client.publish(mqttstate, "MOVING")
-        if mtevent:
-            logging.debug(mtevent)
-    ptevent=movetimer.enter(pingtime,1,pingtimer_passed)
+        mtevent=movetimer.enter(maxmovetime,1,traveltimer_passed) # Door moving start time
+        logging.debug(mtevent)
+    ptevent=pingtimer.enter(pingtime,1,pingtimer_passed)
 
 
 # Register  callbacks
