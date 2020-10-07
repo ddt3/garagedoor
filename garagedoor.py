@@ -26,6 +26,23 @@ relais = DigitalOutputDevice(18,initial_value=True, active_high=True)
 opensensor = Button(23)
 closedsensor = Button(24)
 
+# Garage door closed:  open sensor not active  && closed sensor active
+# Garage door open:    open sensor  active     && closed sensor not active
+# Garage door moving:  open sensor not active  && closed sensor not active, move time not passed 
+# Both sensors active: something is broken
+def is_open() :
+    return opensensor.is_active and not closedsensor.is_active
+
+def is_closed() :
+    return not opensensor.is_active and closedsensor.is_active
+
+def is_moving() :
+    return not opensensor.is_active and not closedsensor.is_active
+
+def is_broken() :
+    return opensensor.is_active and closedsensor.is_active
+
+
 #Define mqqt client
 client = mqtt.Client()
 mqtthost = "192.168.3.1"
@@ -61,7 +78,7 @@ def traveltimer_passed():
     global mtevent
     logging.info('Move timer  passed')
     mtevent=False
-    if not opensensor.is_active and not closedsensor.is_active:
+    if is_moving() or is_broken():
         logging.debug('State is UNKNOWN')
         client.publish(mqttstate, "UNKNOWN")
 
@@ -69,13 +86,10 @@ def pingtimer_passed():
     global ptevent
     logging.info('Ping timer  passed')
     ptevent=False
-    if not opensensor.is_active and not closedsensor.is_active:
-        logging.debug('Ping: State is UNKNOWN')
-        client.publish(mqttstate, "UNKNOWN")
-    elif opensensor.is_active and not closedsensor.is_active:
+    if is_open():
         logging.info('Ping: Door is OPEN')
         client.publish(mqttstate, "OPEN")
-    elif not opensensor.is_active and closedsensor.is_active:
+    elif is_closed():
         logging.info('Ping: Door is CLOSED')
         client.publish(mqttstate, "CLOSED")
     ptevent=movetimer.enter(pingtime,1,pingtimer_passed) # Trigger new ping timer
@@ -83,33 +97,26 @@ def pingtimer_passed():
 
 # The call back if one of the inputs changes: determine the state of the door
 def determine_state():
-    # Garage door closed:  open sensor not active  && closed sensor active
-    # Garage door open:    open sensor  active     && closed sensor not active
-    # Garage door moving:  open sensor not active  && closed sensor not active, move time not passed 
-    # Garage door unknown: open sensor not active  && closed sensor not active, move time passed
+
     global mtevent
-    global ptevent
-    logging.debug("Ping Timer ptevent: "+str(ptevent))
-    if ptevent:
-        pingtimer.cancel(ptevent) # Cancel ping timer we will be sending out status.
     logging.debug('current state, open: %s closed: %s',opensensor.is_active,closedsensor.is_active)
-    if opensensor.is_active and not closedsensor.is_active:
+    if is_open():
         if mtevent:
             movetimer.cancel(mtevent) # Cancel timer, status is known
         logging.info('Door is OPEN')
         client.publish(mqttstate, "OPEN")
-    elif not opensensor.is_active and closedsensor.is_active:
+    elif is_closed():
         logging.info('Door is CLOSED')
         if mtevent:
             movetimer.cancel(mtevent) # Cancel timer, status is known
         client.publish(mqttstate, "CLOSED")
-    else:
+    elif is_moving:
         logging.info('Door is Moving')    
         client.publish(mqttstate, "MOVING")
         mtevent=movetimer.enter(maxmovetime,1,traveltimer_passed) # Door moving start time
         logging.debug(mtevent)
-    ptevent=pingtimer.enter(pingtime,1,pingtimer_passed)
-
+    else:
+        client.publish(mqttstate, "UNKNOWN")
 
 # Register  callbacks
 client.on_connect = on_connect
@@ -123,6 +130,7 @@ closedsensor.when_deactivated = determine_state
 client.connect(mqtthost, 1883, 60)
 client.loop_start()
 determine_state()
+pingtimer_passed()
 while True:
     movetimer.run()
     pingtimer.run()
