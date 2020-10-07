@@ -6,8 +6,6 @@ import paho.mqtt.client as mqtt
 import time, sched, logging, sys
 from gpiozero import Button, DigitalOutputDevice
 
-# Set the default pin factory to a mock factory
-
 # Use logging
 logging.basicConfig(stream=sys.stderr, format='%(asctime)s %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 
@@ -110,7 +108,7 @@ def determine_state():
         if mtevent:
             movetimer.cancel(mtevent) # Cancel timer, status is known
         client.publish(mqttstate, "CLOSED")
-    elif is_moving:
+    elif is_moving():
         logging.info('Door is Moving')    
         client.publish(mqttstate, "MOVING")
         mtevent=movetimer.enter(maxmovetime,1,traveltimer_passed) # Door moving start time
